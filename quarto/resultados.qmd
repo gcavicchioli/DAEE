@@ -1,0 +1,357 @@
+---
+title: ""
+author: "Guilherme Cavicchioli"
+format: 
+  docx:
+    # reference-doc: template_1.docx
+    toc: true 
+    toc-depth: 3 
+    # number-sections: true
+    # number-depth: 1
+    # shift-heading-level-by: -1
+
+editor: visual
+lang: pt
+#bibliography: 
+  # - references.bib
+  # - packages.bib
+---
+
+```{r}
+#| label: Carregando pacotes
+#| echo: FALSE
+#| warning: false
+
+#carregando os pacotes###########
+library(dplyr)
+library(reshape)
+library(vegan)
+library(ggplot2)
+library(xlsx)###Exporta os resultados
+library(tidyverse)
+library(here)
+library(broom)
+library(VennDiagram)
+library(lubridate)
+library(readxl)
+library(flextable)
+
+```
+
+
+
+```{r}
+#| label: importando dados
+#| echo: FALSE
+#| warning: false
+
+#Importando os dados#####
+dados<-openxlsx::read.xlsx(here::here("data","bd_daee.xlsx"),sheet = 1) #importa os dados
+dados[,c("value")] <- as.integer(dados[,"value"])#transforma a coluna "value" em números inteiros
+dados [is.na(dados)]<-0
+dados <- janitor::clean_names(dados) # janitor::clean_names padroniza o nome das colunas pro snake_case
+bd_filtrado<- filter(dados, !nid %in% "1", !id_genero %in% "1", !familia %in% "1")  #filtrando linhas
+tb_filtrado <- as_tibble(bd_filtrado)
+ 
+
+```
+
+
+```{r}
+#| label: função combinando palavras
+#| echo: false
+
+combinar_palavras <- function(vetor) {
+  knitr::combine_words(vetor, and = "e", oxford_comma = F)
+}
+```
+
+
+```{r}
+#| label: criando objetos resultados
+#| echo: false
+
+municipio <- unique(bd_filtrado$municipio) |>
+  combinar_palavras()
+
+secundarios <- dplyr::filter(dados,!nid %in% "1", !id_genero %in% "1", 
+                !familia %in% "1", tecnica == "Dados de Base" )
+
+# bibli_1 <- dplyr::filter(secundarios, trabalho == "Lees et al. 2015")
+# 
+# ameacadas <- dplyr::filter(secundarios, ameacada == "1")
+# 
+# PA <- dplyr::filter(ameacadas, pa %in% c("EN", "CR", "VU", "EX"))
+#   
+# BR <- dplyr::filter(ameacadas, br %in% c("VU", "EN", "CR", "EX"))  
+# 
+# IUCN <- dplyr::filter(ameacadas, iucn %in% c("VU", "EN", "CR", "EX"))
+# 
+# 
+# end_ama <- dplyr::filter(secundarios, end == "Ama")
+
+dados_campo <-dplyr::filter(bd_filtrado, tecnica == "Lista de Mackinnon")
+
+camp1 <- dplyr::filter(dados_campo, campanha == "camp1")
+camp2 <- dplyr::filter(dados_campo, campanha == "camp2")
+
+
+central <- dplyr::filter(dados_campo, tramo == "Central")
+centro_sul <- dplyr::filter(dados_campo, tramo == "Centro-Sul")
+leste <- dplyr::filter(dados_campo, tramo == "Leste")
+oeste <- dplyr::filter(dados_campo, tramo == "Oeste")
+
+# 
+# exo <- dplyr::filter(secundarios, end == "Exo")
+
+
+
+
+```
+
+
+
+##Dados de campo
+
+
+Durante as amostragens de avifauna foram confeccionadas `r n_distinct(dados_campo$amostra)` listas de MacKinnon, nas quais foram registradas `r n_distinct(dados_campo$taxon)` espécies de aves, distribuídas em `r n_distinct (dados_campo$familia)` famílias destacadas em verde no **Quadro 2.9**, e detalhadas adiante. Durante as amostragens de campo da primeira campanha (novembro de 2023), foram registradas 68 espécies e na segunda campanha (fevereiro de 2024) foram registradas `r n_distinct(camp2$taxon)` espécies de aves.
+No tramo Central foram registradas `r n_distinct(central$taxon)` espécies, no tramo Centro-Sul `r n_distinct(centro_sul$taxon)` espécies, no tramo Leste `r n_distinct(leste$taxon)` espécies e tramo Oeste `r n_distinct (oeste$taxon)` espécies de aves. Sendo que todas as espécies registradas em campo, também foram encontradas nos dados bibliográficos. 
+
+
+
+*Curva do coletor*
+```{r}
+#| label: curva_do_coletor
+#| echo: false
+#| message: false
+
+
+# criando o bd para fazer a curva do coletor
+dados_curva<-cast(dados_campo, taxon ~ amostra, value = "value", sum)#chama os dados
+dados_curva <- t(dados_curva)
+
+#Curva do coletor (baseada em amostras) com JackKnife ##########
+(output.jack<-poolaccum(dados_curva,minsize=1))
+S_mean <- output.jack$means[,2] # extrai a curva do coletor randomizada S
+S <- output.jack$S # Obtem cada curva do coletor randomizada
+S_sd <- apply(S,1,sd) # Calcula o desvio padr?o das curvas randomizadas
+jack_mean <- output.jack$means[,4] # extrai a curva de jacknife m?dia
+jack <- output.jack$jack1 # Obtem cada curva de jackknife randomizadas
+jack_sd <- apply(jack,1,sd) # Calcula o desvio-padr?o do Jackknife
+jack_final <- jack[length(jack)] |>
+   round()
+
+```
+
+
+A curva do coletor obtida nos levantamentos de campo não se estabilizou, isto é, não atingiu um platô horizontal, indicando que mais espécies de aves poderiam ser encontradas na AID e ADA com mais esforço de campo (**figura 2.10**). De fato, o número de espécies registradas em campo (`r n_distinct(dados_campo$taxon)`) representou `r round(n_distinct(dados_campo$taxon)*100/jack_final)`% do número estimado de espécies através do estimador Jackknife de primeira ordem (`r jack_final` espécies; **figura 2.10**). 
+
+
+```{r}
+#| echo: false
+#| label: gráfico curva do coletor
+#| fig-cap: Figura 2.10  Curva do coletor (linha vermelha) da amostragem de aves realizadas na AID e ADA dos quatro tramos (Central, Centro-Sul, Oeste e Leste), obtida a partir de 100 aleatorizações dos dados de campo. A linha cinza representa estimativas de riqueza (número de espécies) obtidas através do estimador Jackknife de primeira ordem (COLWELL, 2013). barras verticais em ambas as curvas representam desvios-padrão. Amostragens realizadas em duas campanhas  (setembro de 2023 e fevereiro de 2024).
+
+par(mar = c(5,5,1,1))
+plot(S_mean, type = "l", col ="red", lwd = 2, 
+     ylim=range(c(jack_mean+jack_sd,S_mean)), 
+     xlab = "Amostras (número de listas de MacKinnon)",
+     ylab="N acumulado ou estimado de especies")
+lines(S_mean+S_sd, col="red")
+lines(S_mean-S_sd, col ="red")
+lines(jack_mean, type = "l", col ="light gray", lwd = 2)
+lines(jack_mean+jack_sd, col="light gray")
+lines(jack_mean-jack_sd, col ="light gray")
+legend("bottomright",c("Curva do coletor","Estimativa de Jackknife 1"), 
+       lwd=2, col=c("red","light gray"), cex=0.8, border = F, bty = "n")
+
+```
+
+#### Abundância
+
+```{r}
+#| echo: false
+#| label: FOLM (abundância)
+
+
+#Frequência de ocorrência nas listas de Mackinnon#############
+list_campo<- cast(dados_campo, taxon + nome_popular ~ amostra , value = "value", sum)
+#find row sums across all columns
+list_campo$N <- rowSums(list_campo, na.rm=TRUE)
+list_campo<-  mutate(list_campo, 
+                   `FOLM` = round(N*100/n_distinct(dados_campo$amostra),0)) %>% 
+  arrange(desc(FOLM)) %>% 
+  mutate('Ranque' = seq(1,n_distinct(dados_campo$taxon)))
+#write.xlsx(list_campo,here::here("data", "FOLM.xlsx"))
+# list_campo[,56]
+```
+
+```{r}
+#| label:  n_uma_lm
+#| echo: false
+
+n_um_lm <- dplyr::filter(list_campo ,N==1) |>
+  dplyr::n_distinct() |>
+  as.numeric()
+
+n_um_lm_lista <- dplyr::filter(list_campo, N==1)
+```
+
+
+
+As espécies com maior frequência de ocorrência nas listas de MacKinnon foram: `r list_campo[1,"nome_popular"]` (*`r list_campo[1,"taxon"]`*) presente em `r list_campo[1,"N"]` listas (FOLM = `r round(list_campo[1,"FOLM"])`%), `r list_campo[2,"nome_popular"]` (*`r list_campo[2,"taxon"]`*) presente em `r list_campo[2,"N"]` listas (FOLM = `r list_campo[2,"FOLM"]`%) `r list_campo[3,"nome_popular"]` (*`r list_campo[3,"taxon"]`*) presente em `r list_campo[3,"N"]` listas (FOLM = `r round(list_campo[3,"FOLM"])`%) e `r list_campo[4,"nome_popular"]` (*`r list_campo[4,"taxon"]`*) que esteve presente em `r list_campo[4,"N"]` listas (FOLM = `r round(list_campo[4,"FOLM"])`%; @fig-FOLM e tabela 2.3.3.2). Por outro lado, `r n_um_lm` (`r round(n_um_lm*100/n_distinct(dados_campo$taxon))`%) espécies foram registradas em apenas uma lista, entre elas `r n_um_lm_lista[1,"nome_popular"]` (*`r n_um_lm_lista[1,"taxon"]`*), `r n_um_lm_lista[2,"nome_popular"]` (*`r n_um_lm_lista[2,"taxon"]`*) e `r n_um_lm_lista[8,"nome_popular"]` (*`r n_um_lm_lista[8,"taxon"]`*).
+
+```{r}
+#| echo: false
+#| label: fig-FOLM
+#| fig-cap: Figura 2.3.3.2. Perfil de abundância das espécies de aves registradas em campo através da técnica de listas de MacKinnon. Para ver a identidade de cada espécie no ranque consultar a Tabela 2.3.3.2.
+
+par(mfrow = c(1,1))
+par(mar = c(4,4,1,1))
+barplot(list_campo[,length(list_campo) - 1], xlab = "Ranque de espécies",
+        ylab = "FOLM(%)", col = "black", ylim = c(0,max(list_campo$FOLM)*1.4), 
+        names.arg = list_campo$Ranque)
+```
+
+```{r}
+#| echo: false
+
+colunas<-c("taxon", "nome_popular", "N", "FOLM", "Ranque")
+
+tab_folm <- list_campo |>
+  dplyr::select(all_of(colunas))
+flextable::flextable(tab_folm, col_keys = c("Ranque", "taxon", "nome_popular",
+                                            "N", "FOLM")) |>
+   flextable::italic( j = 2) |>
+  flextable::fontsize( part = "all", size = 10) |>
+  flextable::font( part = "all", fontname = "Verdana") |>
+  flextable::bold(part ="header") |>
+  flextable::set_header_labels( taxon = "Espécie",
+                                nome_popular = "Nome popular",
+                                FOLM = "FOLM (%)") |>
+  flextable::set_table_properties( width = 1, layout = "autofit")
+```
+
+
+```{r}
+#| label: dados_habitat
+#| echo: false
+
+#Habitat #############
+
+riqueza_hab <- matrix(NA,3,5)
+colnames(riqueza_hab) <- c("Central", "Centro-Sul", "Leste", "Oeste", "Total")
+
+riqueza_hab[,1] <-vegan::specnumber( reshape::cast(central, habitat ~ taxon, value = "value",
+            sum)[,-1] )
+
+riqueza_hab[,2] <- specnumber(cast(centro_sul,
+                habitat ~ taxon, value = "value", 
+                sum)[,-1])##riqueza por guilda da primária
+
+riqueza_hab[,3] <- specnumber(cast(leste, 
+                                          habitat ~ taxon, value = "value", 
+                sum)[,-1])##riqueza por guilda da primária
+
+riqueza_hab[,4] <- specnumber(cast(oeste,
+                habitat ~ taxon, value = "value", 
+                sum)[,-1])##riqueza por guilda da primária
+
+
+riqueza_hab[,5] <- specnumber(cast(dados_campo,
+                habitat ~ taxon, value = "value", 
+                sum)[,-1])
+
+rownames(riqueza_hab) <- c("Florestal", "Não-florestal", "Aquático")#dando nome correto às linhas
+riqueza_hab[1:3,] <- riqueza_hab[c(2,3,1),] #invertendo a ordem das linhas. O reshape organiza alfabeticamente
+
+habitat_geral <- cast(dados_campo, taxon + nome_popular + habitat + sens ~ tecnica , value = "value", sum)
+
+hab_florestal <- dplyr::filter(habitat_geral, habitat== "F")
+hab_aquatico <- dplyr::filter(habitat_geral, habitat == "A")
+
+```
+
+#### Habitat preferencial
+
+Das `r n_distinct(dados_campo$taxon)` espécies de aves registradas durante as amostragens de campo nos quatro tramos, `r riqueza_hab["Florestal", "Total"]` (`r round(riqueza_hab["Florestal", "Total"]*100/n_distinct(dados_campo$taxon))`% do total) são classificadas como dependentes de ambientes florestais, como `r hab_florestal[13, "nome_popular"]` (*`r hab_florestal[13,"taxon"]`*), `r hab_florestal[9, "nome_popular"]` (*`r hab_florestal[9,"nome_popular"]`*) e `r hab_florestal[29,"nome_popular"]` (*`r hab_florestal[29, "taxon"]`*; figura 2.3.3.3). Enquanto `r round(riqueza_hab["Não-florestal", "Total"]*100/n_distinct(dados_campo$taxon))`% (`r riqueza_hab["Não-florestal", "Total"]` spp.) das espécies são classificadas como não depentes de ambientes florestais. Ainda, `r riqueza_hab["Aquático", "Total"]` espécies ocupam ambientes aquáticos, como `r hab_aquatico[1,"nome_popular"]` (*`r hab_aquatico[1,"taxon"]`*), `r hab_aquatico[2,"nome_popular"]` (*`r hab_aquatico[2,"taxon"]`*) e o `r hab_aquatico[3,"nome_popular"]` (*`r hab_aquatico[3,"taxon"]`*; figura 2.3.3.3).
+
+
+
+```{r}
+#| label: fig-habitat
+#| echo: false
+#| fig-cap: Classificação do ambiente preferencial (florestal, não-florestal e aquático) das espécies de aves registradas durante amostragem  realizadas na AID e ADA dos quatro tramos (Central, Centro-Sul, Oeste e Leste). Amostragens realizadas em duas campanhas  (setembro de 2023 e fevereiro de 2024).
+
+
+##plotando - Habitat
+#jah <- rev(c("cornflowerblue","darkgoldenrod1","chartreuse4"))
+jah <-c("chartreuse4", "darkgoldenrod1","cornflowerblue")
+
+par(mfrow = c(1,1))
+par(mar = c(4,4,1,1))
+barplot(riqueza_hab, col=jah, cex.names = 0.8, ylab = "Número de espécies", 
+        xlab = "", ylim = c(0, n_distinct(dados_campo$taxon)*1.3))
+legend("topleft", title = "Habitat", fill = jah,
+       legend = rownames(riqueza_hab),bty = "n",xpd = NA,y.intersp=1.2)
+
+```
+
+```{r}
+#| label: dados_sens
+#| echo: false
+
+
+#Sensibilidade - #############
+riqueza_sens <- matrix(NA,3,5)
+colnames(riqueza_sens) <- c("Central", "Centro-Sul", "Leste", "Oeste", "Total")
+
+
+riqueza_sens[2:3,1] <-vegan::specnumber(reshape::cast(central, sens ~ taxon, value = "value",
+            sum)[-1])
+
+riqueza_sens[,2] <-vegan::specnumber( reshape::cast(centro_sul, sens ~ taxon, value = "value",
+            sum)[-1])
+
+riqueza_sens[,3] <-vegan::specnumber( reshape::cast(leste, sens ~ taxon, value = "value",
+            sum)[-1])
+
+riqueza_sens[,4] <-vegan::specnumber( reshape::cast(oeste, sens ~ taxon, value = "value",
+            sum)[-1])
+
+riqueza_sens[,5] <-vegan::specnumber( reshape::cast(dados_campo, sens ~ taxon, value = "value",
+            sum)[-1])
+
+riqueza_sens[1:3,] <- riqueza_sens[c(2,3,1),] #invertendo a ordem das linhas. O reshape organiza alfabeticamente
+
+rownames(riqueza_sens) <- c("Média", "Baixa","Alta")#dando nome correto às linhas
+riqueza_sens["Alta","Central"] <- 0
+
+
+sens_alta <- dplyr::filter(habitat_geral, sens =="H")
+sens_media <-dplyr::filter(habitat_geral, sens =="M")
+```
+
+#### Sensibilidade a alterações ambientais
+
+
+
+Em relação a sensibilidade a alterações ambientais, `r riqueza_sens ["Alta", "Total"]` (`r round(riqueza_sens ["Alta", "Total"]*100/n_distinct(dados_campo$taxon))`% do total) espécies são classificadas como altamente sensíveis a modificações em seu habitat, são elas `r sens_alta[2, "nome_popular"]` (*`r sens_alta[2, "taxon"]`*) e `r sens_alta[1, "nome_popular"]` (*`r sens_alta[1, "taxon"]`*). Já `r round(riqueza_sens ["Média", "Total"]*100/n_distinct(dados_campo$taxon))`% ( `r riqueza_sens["Média", "Total"]` spp.) das espécies apresentam sensibilidade média a alterações, entre elas `r sens_media[4, "nome_popular"]` (*`r sens_media[4, "taxon"]`*), `r sens_media[18, "nome_popular"]` (*`r sens_media[18, "taxon"]`*) e `r sens_media[21, "nome_popular"]`(*`r sens_media[21, "taxon"]`*; figura 2.3.3.4). Além disso, `r riqueza_sens["Baixa", "Total"]` espécies possuem baixa sensibilidade a alterações em seu habitat (figura 2.3.3.4).
+
+```{r}
+#| label: fig-sensi
+#| echo: false
+#| fig-cap: Classificação de sensibilidade (alta, média e baixa) a alterações em seus ambientes das espécies de aves registradas durante amostragem  realizadas na AID e ADA dos quatro tramos (Central, Centro-Sul, Oeste e Leste). Amostragens realizadas em duas campanhas  (setembro de 2023 e fevereiro de 2024).
+
+##plotando precisa corrigir a legenda no paint
+jah_2 <- c("darkgoldenrod1", "chartreuse4","red")
+par(mfrow = c(1,1))
+par(mar = c(4,4,1,1))
+x1 <- barplot(riqueza_sens, col=jah_2, 
+              ylim = c(0, max(n_distinct(dados_campo$taxon)*1.3)),
+              cex.names = 0.8, ylab = "Número de espécies", xlab = "")
+legend("topleft", title = "Sensibilidade",inset=c(0.05,0.0), fill = rev(jah_2), 
+       legend = rev(rownames(riqueza_sens)),bty = "n", xpd = NA,y.intersp=1.2)
+
+
+```
